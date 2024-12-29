@@ -1,226 +1,170 @@
-# RFID Tag Reader Application
+# RFID Tag Reader
 
-## Overview
-
-This application provides a user-friendly way to read and manage RFID (Radio-Frequency Identification) tags using a USB RFID reader. It features a modern graphical interface that displays tag information in real-time and stores historical data.
+A modern GUI application for reading and managing RFID tags using a USB RFID reader. Built with Python, Tkinter, and SQLite.
 
 ## Features
 
-- 🔄 Real-time tag reading and display
-- 📊 Historical tag data tracking
-- 💾 Automatic data storage in a local database
-- 📈 Signal strength monitoring
-- 🎨 Modern, easy-to-use interface
-- 📱 Separate views for new and existing tags
-- 🗑️ Database management tools
+- Real-time tag reading and display
+- Modern, clean user interface
+- Historical tag data tracking
+- Database management with SQLite
+- Separate views for new and existing tags
+- Raw database content viewer
 
 ## Requirements
 
-### Hardware
-
-- A compatible USB RFID reader (GEENFC E series UHF RFID Reader)
-- RFID tags to read
-- Windows computer with available USB port
-
-### Software
-
-- Python 3.7 or higher
-- Windows operating system
-- Required Python packages (install using `pip install -r requirements.txt`):
-  - tkinter (usually comes with Python)
-  - sqlite3 (usually comes with Python)
-- RFID Reader DLL (`SWHidApi.dll`) - included in the project directory
+- Python 3.8 or higher
+- USB RFID Reader (compatible with SWHidApi.dll)
+- Required Python packages (see requirements.txt)
+- Windows OS (due to DLL dependency)
 
 ## Installation
 
-1. **Clone or Download the Repository**
+1. Clone the repository:
 
-   ```bash
-   git clone [repository-url]
-   cd rfid-reader
-   ```
+```bash
+git clone https://github.com/mikejham/geenfc-rfid-reader.git
+cd geenfc-rfid-reader
+```
 
-2. **Install Required Packages**
+2. Install required packages:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-3. **Verify Files**
+3. Verify all required files are present:
 
-   - Ensure all required files are present in the project directory:
-     - `main.py`
-     - `reader.py`
-     - `database.py`
-     - `gui.py`
-     - `SWHidApi.dll`
+- main.py
+- reader.py
+- database.py
+- gui.py
+- SWHidApi.dll (in the same directory as the Python files)
 
-4. **Connect the RFID Reader**
-   - Plug the USB RFID reader into your computer
-   - Wait for Windows to recognize the device
+## Usage
 
-## Running the Application
+Run the application:
 
-1. **Start the Program**
+```bash
+python main.py
+```
 
-   ```bash
-   python main.py
-   ```
+The application window will open with:
 
-2. **Using the Interface**
+- Status section showing reader state and tag count
+- Latest read section showing most recent tag
+- Tabs for viewing new and existing tags
+- Database management controls
 
-   - The application will automatically:
-     - Initialize the RFID reader
-     - Create the database (if it doesn't exist)
-     - Open the main window
+## Architecture
 
-3. **Reading Tags**
+### Threading Design
 
-   - Hold an RFID tag near the reader
-   - The tag information will appear in the "New Tags" tab
-   - Historical data will be shown in the "Existing Tags" tab
+The application uses a multi-threaded architecture for optimal performance and responsiveness:
 
-4. **Managing Data**
-   - Use the "Clear Database" button to remove all stored tag data
-   - A confirmation dialog will appear before clearing
+1. **Main Thread (GUI)**:
 
-## Understanding the Display
+```python
+def main():
+    root = tk.Tk()
+    data_queue = Queue()  # Thread-safe queue for communication
 
-### Status Section
+    # Start RFID reader thread
+    reader_thread = threading.Thread(
+        target=rfid_reader_thread,
+        args=(data_queue,),
+        daemon=True  # Thread will stop when main program exits
+    )
+    reader_thread.start()
 
-- Shows the current reader status
-- Displays total number of unique tags read
+    # Create GUI
+    gui = RFIDGui(root, data_queue)
+    root.mainloop()
+```
 
-### Latest Read Section
+2. **Reader Thread**:
 
-- Shows information about the most recently read tag
-- Includes tag ID and signal strength
+```python
+def rfid_reader_thread(data_queue):
+    reader = RFIDReader()
+    db = RFIDDatabase()
 
-### Tags Tabs
+    while True:
+        # Read tags (non-blocking)
+        tags = reader.read_tags()
 
-1. **New Tags Tab**
+        if tags:
+            for tag in tags:
+                # Process tag data
+                db.record_tag(tag)
 
-   - Shows tags read in the current session
-   - Displays:
-     - Tag ID
-     - First seen time
-     - Last seen time
-     - Signal strength
+                # Send to GUI via queue
+                data_queue.put({
+                    "type": "new_tag",
+                    "data": tag
+                })
 
-2. **Existing Tags Tab**
-   - Shows all historical tag readings
-   - Same information as New Tags tab
-   - Ordered by most recent first
+        time.sleep(0.1)  # Prevent CPU overuse
+```
 
-## Technical Details
+3. **Thread Communication**:
 
-### Application Structure
+```python
+def update_gui(self):
+    """Update GUI with data from the queue"""
+    try:
+        while self.data_queue.qsize():
+            msg = self.data_queue.get_nowait()
+            if msg["type"] == "new_tag":
+                # Update GUI with new tag data
+                self.update_tag_display(msg["data"])
+    finally:
+        # Schedule next update
+        self.root.after(100, self.update_gui)
+```
 
-The application is split into three main components:
+The threading architecture provides:
 
-1. **Main Module** (`main.py`)
+- **Non-blocking UI**: The GUI remains responsive while reading tags
+- **Continuous Reading**: Tags are read continuously without interruption
+- **Thread Safety**: Data is passed safely between threads using a queue
+- **Clean Termination**: Daemon thread ensures clean program exit
 
-   - Application entry point
-   - Sets up the GUI and reader threads
-   - Manages communication between components
+Key components:
 
-2. **Reader Module** (`reader.py`)
+- **Queue**: Thread-safe communication between reader and GUI
+- **Daemon Thread**: Automatically terminates with main program
+- **Non-blocking Updates**: Periodic GUI updates without blocking
+- **Thread Safety**: Separated database and GUI operations
 
-   - Handles RFID reader communication
-   - Processes tag data
-   - Calculates signal strength
-   - Runs in a separate thread
+This design ensures:
 
-3. **Database Module** (`database.py`)
-   - Manages the SQLite database
-   - Stores tag information
-   - Tracks first and last seen times
-   - Handles data queries
+- Responsive user interface
+- Continuous tag reading capability
+- Safe data handling between threads
+- Proper resource management
 
-### Data Storage
+## Database Structure
 
-- Uses SQLite database (`rfid_readings.db`)
-- Stores:
-  - Unique tag IDs
-  - First seen timestamp
-  - Last seen timestamp
-  - Signal strength information
-  - Antenna and reader details
+The SQLite database maintains two main tables:
 
-### Signal Strength Calculation
+- `tags`: Stores unique tag information and history
+- `readings`: Records individual tag readings
 
-- Raw values range from 0x82 to 0xA0
-- Converted to percentage for easier understanding
-- Higher percentage = stronger signal
+## Contributing
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Reader Not Found**
-
-   - Check USB connection
-   - Verify the reader is powered on
-   - Ensure `SWHidApi.dll` is in the same directory as the Python files
-   - Try unplugging and reconnecting the reader
-
-2. **No Tags Appearing**
-
-   - Make sure tags are within range (usually within a few inches)
-   - Check if the reader is beeping when tags are present
-   - Verify the status message shows "Waiting for tags..."
-   - Try moving the tag closer to the reader's antenna
-
-3. **Database Issues**
-   - Check if the application has write permissions in the current directory
-   - Try clearing the database using the "Clear Database" button
-   - If database becomes corrupted, delete `rfid_readings.db` and restart the application
-
-### Error Messages
-
-- "Failed to load DLL": Verify `SWHidApi.dll` is in the same directory as the Python files
-- "No USB Device": Check reader connection and Windows Device Manager
-- "Failed to connect reader": Try unplugging and reconnecting the reader, or restart the application
-
-### Performance Tips
-
-- Keep the reader and tags away from metal objects
-- Maintain clear line of sight between reader and tags
-- For best results, hold tags 2-6 inches from the reader
-- If readings are inconsistent, try adjusting the tag's orientation
-
-## Support and Contribution
-
-### Getting Help
-
-- Check the troubleshooting section
-- Review error messages in the terminal
-- Contact technical support
-
-### Contributing
-
-- Fork the repository
-- Make your changes
-- Submit a pull request
-- Follow the coding style guidelines
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
 
 ## License
 
-[Insert License Information]
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
-- GEENFC for the RFID reader and SDK
-- Contributors and testers
-- [Add any other acknowledgments]
-
-## Version History
-
-- 1.0.0: Initial release
-  - Basic tag reading
-  - Database storage
-  - GUI interface
-
----
-
-_Note: This application is designed for Windows systems and requires specific hardware. Please ensure all requirements are met before installation._
+- Thanks to the RFID reader manufacturer for providing the DLL
+- Built with Python and Tkinter
+- Uses SQLite for data storage

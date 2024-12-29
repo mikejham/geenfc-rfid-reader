@@ -1,0 +1,3 @@
+# Required external packages
+pillow>=10.2.0  # For image handling and icons
+pywin32>=306    # For Windows DLL interaction 
