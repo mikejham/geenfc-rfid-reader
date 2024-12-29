@@ -24,54 +24,13 @@ import time
 from datetime import datetime
 import os
 import sys
-import logging
-from logging.handlers import RotatingFileHandler
 from typing import Dict, List, Optional, Any
 from queue import Queue
 from database import RFIDDatabase
-
-
-# Configure logging
-def setup_logging():
-    """
-    Configure logging with both file and console handlers.
-    File logs are rotated when they reach 5MB, keeping 5 backup files.
-    """
-    logger = logging.getLogger("rfid_reader")
-    logger.setLevel(logging.DEBUG)
-
-    # Create logs directory if it doesn't exist
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
-
-    # File handler with rotation
-    file_handler = RotatingFileHandler(
-        "logs/rfid_reader.log",
-        maxBytes=5 * 1024 * 1024,  # 5MB
-        backupCount=5,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    file_handler.setFormatter(file_formatter)
-
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter("%(levelname)s - %(message)s")
-    console_handler.setFormatter(console_formatter)
-
-    # Add handlers to logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-
-    return logger
-
+from logger import setup_logger
 
 # Initialize logger
-logger = setup_logging()
+logger = setup_logger(__name__)
 
 
 def get_dll_path() -> str:
@@ -182,8 +141,12 @@ class RFIDReader:
     def start_reading(self) -> bool:
         """Start the tag reading operation."""
         try:
+            logger.debug("Clearing tag buffer before starting read")
             self.dll.SWHid_ClearTagBuf()
+
+            logger.debug("Attempting to start continuous read")
             result = self.dll.SWHid_StartRead() == 1
+
             if result:
                 logger.info("Successfully started tag reading")
             else:
@@ -215,7 +178,14 @@ class RFIDReader:
                 arrBuffer, byref(iTagLength), byref(iTagNumber)
             )
 
-            if ret != 1:
+            logger.debug(
+                f"GetTagBuf return value: {ret}, TagNumber: {iTagNumber.value}, TagLength: {iTagLength.value}"
+            )
+
+            # Return value 2 indicates successful read with tags
+            # Return value 1 indicates successful read but no tags
+            # Return value 0 or other indicates error
+            if ret != 2:
                 logger.debug(f"No tags found in buffer (return code: {ret})")
                 return []
 
@@ -226,20 +196,36 @@ class RFIDReader:
                 for tag_index in range(iTagNumber.value):
                     try:
                         bPackLength = arrBuffer[iLength]
+                        logger.debug(
+                            f"Tag {tag_index + 1} packet length: {bPackLength}"
+                        )
 
                         # Get Tag Type
                         tag_type = hex(arrBuffer[1 + iLength + 0])
+                        logger.debug(f"Tag {tag_index + 1} type: {tag_type}")
 
                         # Get Antenna
                         antenna = hex(arrBuffer[1 + iLength + 1])
+                        logger.debug(f"Tag {tag_index + 1} antenna: {antenna}")
 
                         # Get Tag ID
                         tag_id = ""
                         for i in range(2, bPackLength - 1):
                             tag_id += hex(arrBuffer[1 + iLength + i]) + " "
+                        logger.debug(f"Tag {tag_index + 1} raw ID: {tag_id}")
 
                         # Get RSSI
                         rssi = hex(arrBuffer[1 + iLength + bPackLength - 1])
+                        logger.debug(f"Tag {tag_index + 1} RSSI: {rssi}")
+
+                        # Dump raw buffer for debugging
+                        raw_data = " ".join(
+                            [
+                                hex(x)
+                                for x in arrBuffer[iLength : iLength + bPackLength + 1]
+                            ]
+                        )
+                        logger.debug(f"Tag {tag_index + 1} raw buffer: {raw_data}")
 
                         # Format the data
                         tag_data = format_tag_data(
@@ -313,9 +299,17 @@ def rfid_reader_thread(data_queue: Queue) -> None:
         logger.info(msg)
         data_queue.put({"type": "status", "message": msg})
 
+        read_count = 0
         while True:
             try:
+                read_count += 1
+                if read_count % 100 == 0:  # Log every 100th read attempt
+                    logger.debug(f"Read attempt {read_count}")
+
                 tags = reader.read_tags()
+                if tags:
+                    logger.info(f"Found {len(tags)} tags in this read cycle")
+
                 for tag_data in tags:
                     if db.record_tag(tag_data):
                         logger.info(f"New tag detected: {tag_data['tag_id']}")

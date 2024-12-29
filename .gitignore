@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -21,60 +20,27 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
-.env
-
-# PyInstaller
-build/
-dist/
-*.manifest
-*.spec
-
-# Project specific
-logs/
-*.log
-*.log.*
-rfid_readings.db
+# SQLite database
 *.db
 *.db-journal
+
+# Logs
+*.log
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
 
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Backup files
-*.bak
-*.backup
-*.old
-
-# Debug files
-debug/
-debug.log
-
-# Test files
-test/
-tests/
-.coverage
-.pytest_cache/
-htmlcov/
-
-# Documentation
-docs/_build/
-docs/generated/ 
+# Build
+*.spec
+build/
+dist/ 

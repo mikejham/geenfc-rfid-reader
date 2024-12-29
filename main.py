@@ -25,48 +25,47 @@ Dependencies:
     - reader: RFID reader interface
 """
 
-#!/usr/bin/python
-# -*- coding: UTF-8 -*-
-import tkinter as tk
-import threading
 from queue import Queue
+import tkinter as tk
+from threading import Thread
 from gui import RFIDGui
 from reader import rfid_reader_thread
+from logger import setup_logger
+
+# Initialize logging
+logger = setup_logger(__name__)
 
 
-def main() -> None:
-    """
-    Initialize and start the RFID Tag Reader application.
+def main():
+    """Main entry point for the RFID Reader application."""
+    try:
+        logger.info("Starting RFID Reader application")
 
-    This function:
-    1. Creates the main application window
-    2. Sets up thread communication
-    3. Starts the RFID reader thread
-    4. Initializes the GUI
-    5. Begins the main event loop
+        # Create the main window
+        root = tk.Tk()
+        root.title("RFID Tag Reader")
 
-    The application runs until the user closes the window,
-    at which point all threads are automatically terminated.
-    """
-    # Create the root window
-    root = tk.Tk()
+        # Create data queue for thread communication
+        data_queue = Queue()
 
-    # Create a queue for thread communication
-    data_queue = Queue()
+        # Create and start the RFID reader thread
+        reader_thread = Thread(
+            target=rfid_reader_thread, args=(data_queue,), daemon=True
+        )
+        reader_thread.start()
+        logger.info("Started RFID reader thread")
 
-    # Create and start the RFID reader thread
-    reader_thread = threading.Thread(
-        target=rfid_reader_thread,
-        args=(data_queue,),
-        daemon=True,  # Thread will be terminated when main program exits
-    )
-    reader_thread.start()
+        # Create and start the GUI
+        gui = RFIDGui(root, data_queue)
+        logger.info("Created GUI")
 
-    # Create the GUI
-    app = RFIDGui(root, data_queue)
+        # Start the main loop
+        root.mainloop()
+        logger.info("Application closed")
 
-    # Start the main loop
-    root.mainloop()
+    except Exception as e:
+        logger.error(f"Error in main: {e}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
